@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pth
+data/
+static/uploads/
+static/cam_output_*.jpg
+.vscode/
