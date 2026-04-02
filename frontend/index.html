@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deepfake Image Detector</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Deepfake Image Detector</h1>
+            <p class="subtitle">AI-Powered Image Authenticity Analysis</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <form id="uploadForm" class="upload-form">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="imageInput" accept="image/*" required>
+                        <label for="imageInput" class="file-label">
+                            <span class="file-icon">📁</span>
+                            <span class="file-text">Choose an image to analyze</span>
+                            <span class="file-button">Browse</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="submit-btn">
+                        <span class="btn-text">Analyze Image</span>
+                        <span class="btn-loader" style="display: none;">⏳</span>
+                    </button>
+                </form>
+            </div>
+
+            <div id="result" class="result-container"></div>
+
+            <div class="images-section">
+                <div class="image-card">
+                    <h3>📷 Selected Image</h3>
+                    <div class="image-wrapper">
+                        <img id="preview" src="#" alt="Image Preview">
+                        <div class="image-placeholder">No image selected</div>
+                    </div>
+                </div>
+
+                <div class="image-card">
+                    <h3>🔥 Grad-CAM Heatmap</h3>
+                    <div class="image-wrapper">
+                        <img id="heatmap" src="#" alt="Grad-CAM Heatmap">
+                        <div class="image-placeholder">Heatmap will appear here</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const input = document.getElementById('imageInput');
+        const submitBtn = form.querySelector('.submit-btn');
+        const btnText = submitBtn.querySelector('.btn-text');
+        const btnLoader = submitBtn.querySelector('.btn-loader');
+        const fileText = document.querySelector('.file-text');
+        const resultDiv = document.getElementById('result');
+        const previewImg = document.getElementById('preview');
+        const heatmapImg = document.getElementById('heatmap');
+
+        // Update file label when file is selected
+        input.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                fileText.textContent = this.files[0].name;
+            } else {
+                fileText.textContent = 'Choose an image to analyze';
+            }
+        });
+
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const file = input.files[0];
+            if (!file) {
+                alert("Please select an image.");
+                return;
+            }
+
+            // Show loading state
+            submitBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline-block';
+            
+            // Clear previous results and images
+            resultDiv.innerHTML = '<div class="processing">Analyzing image...</div>';
+            heatmapImg.src = ''; // Clear previous src to force reload
+
+            // Preview the selected image
+            const reader = new FileReader();
+            reader.onload = () => {
+                previewImg.src = reader.result;
+            };
+            reader.readAsDataURL(file);
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append("image", file);
+
+            // Send request to the Flask API
+            fetch("/predict", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `
+                        <div class="result-card" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">
+                            <h2>❌ Error</h2>
+                            <p>${data.error}</p>
+                        </div>
+                    `;
+                    heatmapImg.src = '';
+                    return;
+                }
+
+                const probs = data.probabilities || {};
+                const prediction = data.prediction || 'Unknown';
+                const isFake = prediction.toLowerCase() === 'fake';
+                
+                // Format result with better styling
+                resultDiv.innerHTML = `
+                    <div class="result-card">
+                        <div class="prediction-badge ${isFake ? 'fake' : 'real'}">
+                            ${isFake ? '⚠️ FAKE' : '✅ REAL'}
+                        </div>
+                        <h2>Prediction: ${prediction}</h2>
+                        <div class="probabilities">
+                            <div class="prob-item">
+                                <div class="prob-label">Fake Probability</div>
+                                <div class="prob-value">${probs.Fake ?? "N/A"}%</div>
+                            </div>
+                            <div class="prob-item">
+                                <div class="prob-label">Real Probability</div>
+                                <div class="prob-value">${probs.Real ?? "N/A"}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Show returned heatmap (unique filename avoids stale caching)
+                if (data.heatmap) {
+                    heatmapImg.src = data.heatmap + (data.heatmap.includes('?') ? '&' : '?') + 't=' + Date.now();
+                } else {
+                    heatmapImg.src = '';
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                resultDiv.innerHTML = `
+                    <div class="result-card" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);">
+                        <h2>❌ Error</h2>
+                        <p>Failed to get prediction. Please try again.</p>
+                    </div>
+                `;
+            })
+            .finally(() => {
+                // Reset button state
+                submitBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+                // Reset file input to allow selecting the same file again
+                input.value = '';
+                fileText.textContent = 'Choose an image to analyze';
+            });
+        });
+    </script>
+
+</body>
+</html>
